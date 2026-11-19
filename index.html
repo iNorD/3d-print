@@ -1,0 +1,1532 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Расчёт 3D-печати по весу</title>
+<meta name="description" content="Загрузите модель STL, 3MF или OBJ и узнайте вес пластика и цену печати.">
+<meta name="theme-color" content="#ECEEEA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131517" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%239A5A0E'/%3E%3Cpath d='M16 6.5l8.5 4.8v9.4L16 25.5l-8.5-4.8v-9.4z M7.5 11.3L16 16l8.5-4.7 M16 16v9.5' fill='none' stroke='%23fff' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="canonical" href="https://inord.github.io/3d-print/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:title" content="Расчёт 3D-печати по весу">
+<meta property="og:description" content="Загрузите модель STL, 3MF или OBJ и узнайте вес пластика и цену печати.">
+<meta property="og:url" content="https://inord.github.io/3d-print/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap"></noscript>
+<style>
+/* Макет: стол мастерской. Слева камера принтера с моделью на печатной пластине, справа этикетка катушки с расчётом. */
+:root {
+  --bg: #ECEEEA;
+  --surface: #FFFFFF;
+  --surface-2: #F5F6F3;
+  --ink: #1C1F22;
+  --muted: #586067;
+  --line: #D3D7D1;
+  --accent: #9A5A0E;
+  --accent-soft: #F5E6D1;
+  --accent-text: #7A4407;
+  --accent-ink: #FFFFFF;
+  --stage: #22252A;
+  --stage-ink: #E9E6DF;
+  --stage-muted: #9C9A93;
+  --warn: #9B3F0C;
+  --warn-soft: #FBE7D9;
+  --focus: #1F6FD1;
+  --font-display: "Unbounded", "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131517;
+    --surface: #1C1F22;
+    --surface-2: #23272B;
+    --ink: #ECEDE9;
+    --muted: #9EA5AB;
+    --line: #33383D;
+    --accent: #E6A24C;
+    --accent-soft: #3A2B17;
+    --accent-text: #E6A24C;
+    --accent-ink: #1A1206;
+    --stage: #0E1012;
+    --stage-ink: #E9E6DF;
+    --stage-muted: #8E8C86;
+    --warn: #F2A671;
+    --warn-soft: #3A2316;
+    --focus: #6FA8FF;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131517;
+  --surface: #1C1F22;
+  --surface-2: #23272B;
+  --ink: #ECEDE9;
+  --muted: #9EA5AB;
+  --line: #33383D;
+  --accent: #E6A24C;
+  --accent-soft: #3A2B17;
+  --accent-text: #E6A24C;
+  --accent-ink: #1A1206;
+  --stage: #0E1012;
+  --stage-ink: #E9E6DF;
+  --stage-muted: #8E8C86;
+  --warn: #F2A671;
+  --warn-soft: #3A2316;
+  --focus: #6FA8FF;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 40px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 28px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Шапка */
+.top { display: grid; gap: 18px; }
+.eyebrow {
+  font: 600 12px/1.2 var(--font-mono);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
+}
+.top h1 {
+  font: 700 clamp(28px, 4.6vw, 46px)/1.08 var(--font-display);
+  letter-spacing: -.01em; max-width: 18ch;
+}
+.lede { color: var(--muted); max-width: 60ch; font-size: 17px; }
+.terms { display: flex; flex-wrap: wrap; gap: 10px 28px; padding-top: 4px; }
+.term { display: grid; gap: 2px; }
+.term b { font: 600 22px/1.1 var(--font-mono); font-variant-numeric: tabular-nums; }
+.term span { font-size: 13px; color: var(--muted); }
+
+/* Рабочая область */
+.work {
+  display: grid; gap: 20px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  align-items: start;
+}
+@media (max-width: 880px) { .work { grid-template-columns: minmax(0, 1fr); } }
+.col { display: grid; gap: 14px; min-width: 0; }
+
+.stage {
+  position: relative; border-radius: var(--radius); overflow: hidden;
+  background: var(--stage); color: var(--stage-ink);
+  height: clamp(300px, 52vw, 470px);
+}
+@media (max-width: 880px) { .stage { height: auto; aspect-ratio: 4 / 3.4; max-width: 100%; } }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.stage-bar {
+  position: absolute; left: 0; right: 0; top: 0;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 12px 14px; pointer-events: none;
+}
+.stage-bar > * { pointer-events: auto; }
+.stage-name { font: 600 13px/1.3 var(--font-mono); color: var(--stage-ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-hint {
+  position: absolute; left: 12px; bottom: 12px; max-width: calc(100% - 24px);
+  font-size: 12px; line-height: 1.35; color: var(--stage-ink); pointer-events: none;
+  background: color-mix(in srgb, var(--stage) 80%, transparent); padding: 5px 9px; border-radius: 6px;
+}
+.stage-empty {
+  position: absolute; inset: 0; display: grid; place-content: center; text-align: center;
+  padding: 24px; color: var(--stage-muted); font-size: 14px;
+}
+.drop {
+  position: absolute; inset: 10px; border: 2px dashed var(--accent); border-radius: 8px;
+  display: grid; place-content: center; text-align: center;
+  background: color-mix(in srgb, var(--stage) 82%, transparent);
+  font: 600 16px/1.4 var(--font-body); color: var(--stage-ink);
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 42px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); font-weight: 600; cursor: pointer; text-decoration: none;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.on-stage { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); min-height: 36px; font-size: 14px; }
+.file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.stage:has(.file-input:focus-visible) .btn.on-stage { outline: 2px solid var(--focus); outline-offset: 2px; }
+.file-note { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 14px; scroll-margin: 16px; }
+.models-empty { margin: 0; padding: 0 18px 14px; font: 400 12.5px/1.4 var(--font-mono); color: var(--muted); }
+
+/* Список моделей */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.models-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 16px 10px; }
+.models-head h2 { font: 600 15px/1.3 var(--font-body); }
+.models-head span { font-size: 13px; color: var(--muted); }
+.models { list-style: none; margin: 0; padding: 0 8px 8px; display: grid; gap: 4px; }
+.model {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px 14px;
+  padding: 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+}
+.model:hover { background: var(--surface-2); }
+.model.sel { background: var(--surface-2); border-color: var(--line); }
+.model-main { min-width: 0; display: grid; gap: 2px; }
+.model-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-meta { font: 400 12.5px/1.4 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.model-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.flag { font-size: 12px; line-height: 1.3; padding: 3px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+.flag.note { background: var(--accent-soft); color: var(--accent-text); }
+.qty { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.qty button { width: 32px; height: 32px; border: 0; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; }
+.qty button:hover { background: var(--surface-2); }
+.qty button:focus-visible, .qty input:focus-visible { outline-offset: -2px; }
+.qty input { width: 42px; height: 32px; border: 0; border-inline: 1px solid var(--line); text-align: center; background: transparent; font-family: var(--font-mono); font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.qty input::-webkit-inner-spin-button, .qty input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.del { width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1; }
+.del:hover { background: var(--warn-soft); color: var(--warn); }
+@media (max-width: 520px) {
+  .model { grid-template-columns: minmax(0, 1fr) auto; }
+  .model .qty { grid-column: 1; justify-self: start; }
+}
+
+.model-opts { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+.field { display: grid; gap: 6px; }
+.field > label, .group-title { font-size: 13px; font-weight: 600; color: var(--muted); }
+.field select, .field input[type="number"] {
+  min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+.field input[type="number"] { width: 110px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.model-opts .dims { font: 400 13px/1.4 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; padding-bottom: 9px; }
+
+/* Параметры */
+.opts { padding: 18px 16px; display: grid; gap: 18px; }
+.group { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.group legend { padding: 0; margin-bottom: 8px; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg label { position: relative; }
+.seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.seg span {
+  display: inline-grid; gap: 1px; min-height: 40px; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); cursor: pointer; line-height: 1.25;
+}
+.seg span small { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+.seg input:checked + span { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { position: relative; }
+.swatch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.swatch span {
+  display: block; width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  box-shadow: inset 0 -6px 10px rgba(0,0,0,.12);
+}
+.swatch input:checked + span { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.swatch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 4px; }
+.color-name { font-size: 14px; }
+.color-name .muted { color: var(--muted); }
+.switch { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.switch input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); }
+.switch small { display: block; color: var(--muted); font-size: 13px; }
+
+/* Этикетка катушки */
+.spool { padding: 18px 18px 16px; display: grid; gap: 12px; border: 2px solid var(--ink); border-radius: var(--radius); background: var(--surface); }
+.spool-top { display: flex; justify-content: space-between; gap: 12px; font: 600 12px/1.3 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.spool-top span:last-child { color: var(--muted); text-align: right; }
+.spool-rule { height: 0; border-top: 1px dashed var(--line); }
+.spool-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.spool-row .k { color: var(--muted); font-size: 14px; }
+.spool-row .v { font: 600 18px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.price { font: 700 clamp(38px, 6vw, 50px)/1 var(--font-display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.formula { font: 400 13px/1.45 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.disclaimer { font-size: 13px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions .btn { flex: 1 1 180px; }
+.copy-note { font-size: 13px; color: var(--accent); min-height: 1.4em; }
+.copy-fallback { width: 100%; min-height: 150px; font: 13px/1.4 var(--font-mono); padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); }
+
+/* Как заказать */
+.how { display: grid; gap: 16px; }
+.how h2 { font: 700 20px/1.2 var(--font-display); }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); counter-reset: s; }
+@media (max-width: 760px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+.steps li { counter-increment: s; display: grid; gap: 6px; padding-top: 12px; border-top: 2px solid var(--ink); min-width: 0; }
+.steps li::before { content: "Шаг " counter(s); font: 600 12px/1.2 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.steps b { font-size: 16px; }
+.steps p { color: var(--muted); font-size: 15px; }
+.foot { display: grid; gap: 6px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+.foot p { max-width: 75ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">FDM-печать на заказ · Санкт-Петербург</div>
+    <h1>Сколько стоит напечатать вашу модель</h1>
+    <p class="lede">Загрузите файл STL, 3MF или OBJ. Калькулятор посчитает, сколько пластика уйдёт на печать, и сразу покажет цену.</p>
+    <div class="terms" id="terms"></div>
+  </header>
+
+  <main class="work">
+    <section class="col" aria-label="Модель">
+      <div class="stage" id="stage">
+        <canvas id="view" aria-label="Трёхмерный вид модели на печатном столе"></canvas>
+        <div class="stage-empty" id="stageEmpty" hidden></div>
+        <div class="stage-bar">
+          <div class="stage-name" id="stageName"></div>
+          <label class="btn on-stage" for="file">Загрузить модель</label>
+        </div>
+        <div class="stage-hint" id="stageHint">Крутите модель мышью или пальцем. Файл можно перетащить сюда.</div>
+        <div class="drop" id="drop" hidden>Отпустите файл, чтобы посчитать</div>
+        <input class="file-input" type="file" id="file" accept=".stl,.3mf,.obj" multiple>
+      </div>
+      <p class="file-note" id="fileNote" role="alert" hidden></p>
+
+      <div class="panel">
+        <div class="models-head">
+          <h2>Модели в заказе</h2>
+          <span id="modelsCount"></span>
+        </div>
+        <ul class="models" id="models"></ul>
+        <p class="models-empty" id="modelsEmpty" hidden>Пока пусто. Загрузите файл модели.</p>
+        <div class="model-opts" id="modelOpts" hidden>
+          <div class="field">
+            <label for="unit">Единицы в файле</label>
+            <select id="unit">
+              <option value="1">миллиметры</option>
+              <option value="10">сантиметры</option>
+              <option value="25.4">дюймы</option>
+              <option value="1000">метры</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="scale">Масштаб, %</label>
+            <input type="number" id="scale" min="1" max="1000" step="1" value="100" inputmode="numeric">
+          </div>
+          <div class="dims" id="dims"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="col" aria-label="Расчёт">
+      <form class="panel opts" id="opts" autocomplete="off">
+        <fieldset class="group">
+          <legend class="group-title">Пластик</legend>
+          <div class="seg" id="materials"></div>
+        </fieldset>
+        <fieldset class="group">
+          <legend class="group-title">Цвет</legend>
+          <div class="swatches" id="colors"></div>
+          <div class="color-name" id="colorName"></div>
+        </fieldset>
+        <fieldset class="group">
+          <legend class="group-title">Назначение детали</legend>
+          <div class="seg" id="presets"></div>
+        </fieldset>
+        <label class="switch" for="supports">
+          <input type="checkbox" id="supports">
+          <span>Нужны поддержки
+            <small>Если у модели есть нависающие части. Добавим около 15% пластика.</small>
+          </span>
+        </label>
+      </form>
+
+      <div class="spool" id="spool" aria-live="polite">
+        <div class="spool-top"><span id="spoolMat">PLA</span><span id="spoolSpec"></span></div>
+        <div class="spool-rule"></div>
+        <div class="spool-row"><span class="k">Пластика на заказ</span><span class="v" id="grams">0 г</span></div>
+        <div class="spool-row"><span class="k">Деталей</span><span class="v" id="pieces">0</span></div>
+        <div class="spool-rule"></div>
+        <div class="spool-row"><span class="k">Цена</span><span class="price" id="price">0 ₽</span></div>
+        <div class="formula" id="formula"></div>
+        <p class="disclaimer">Это предварительная оценка. Точный вес и цену подтвердим после нарезки модели в слайсере.</p>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" type="button" id="copy">Скопировать расчёт</button>
+        <a class="btn" id="contact" target="_blank" rel="noopener">Написать на Авито</a>
+      </div>
+      <div class="copy-note" id="copyNote" role="status"></div>
+      <textarea class="copy-fallback" id="copyFallback" readonly hidden aria-label="Текст расчёта"></textarea>
+    </aside>
+  </main>
+
+  <section class="how" aria-labelledby="howTitle">
+    <h2 id="howTitle">Как заказать</h2>
+    <ol class="steps">
+      <li><b>Загрузите модель</b><p>Выберите пластик, цвет и назначение детали. Если деталей несколько, добавьте все файлы и укажите количество.</p></li>
+      <li><b>Отправьте расчёт</b><p>Нажмите «Скопировать расчёт» и пришлите текст в сообщения на Авито вместе со ссылкой на модель: страница на MakerWorld, Printables или Thingiverse либо файл на Яндекс Диске или Google Диске. Файлы STL и 3MF чат Авито не принимает.</p></li>
+      <li><b>Получите точную цену</b><p>Проверим модель в слайсере, назовём точный вес, цену и срок. Печатаем после вашего подтверждения.</p></li>
+    </ol>
+  </section>
+
+  <footer class="foot">
+    <p>Файлы не отправляются на сервер: модель читается и считается прямо в вашем браузере.</p>
+    <p id="footSpecs"></p>
+  </footer>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="vendor/fflate.js"></script>
+
+<script id="calc">
+/* Расчётная часть без зависимостей от страницы: разбор файлов, объём, вес, цена. */
+
+function parseSTL(buffer) {
+  const dv = new DataView(buffer);
+  if (buffer.byteLength >= 84) {
+    const n = dv.getUint32(80, true);
+    if (n > 0 && 84 + n * 50 === buffer.byteLength) return readBinarySTL(dv, n);
+  }
+  const head = new TextDecoder().decode(new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 4096)));
+  if (/^\s*solid/i.test(head) && /facet|vertex/i.test(head)) {
+    return readAsciiSTL(new TextDecoder().decode(new Uint8Array(buffer)));
+  }
+  if (buffer.byteLength >= 84) {
+    const n = dv.getUint32(80, true);
+    if (n > 0 && 84 + n * 50 <= buffer.byteLength) return readBinarySTL(dv, n);
+  }
+  throw new Error("Файл не похож на STL");
+}
+
+function readBinarySTL(dv, n) {
+  const out = new Float32Array(n * 9);
+  let o = 84;
+  for (let i = 0; i < n; i++) {
+    o += 12;
+    for (let k = 0; k < 9; k++) { out[i * 9 + k] = dv.getFloat32(o, true); o += 4; }
+    o += 2;
+  }
+  return out;
+}
+
+function readAsciiSTL(text) {
+  const re = /vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)/g;
+  const v = [];
+  let m;
+  while ((m = re.exec(text))) v.push(+m[1], +m[2], +m[3]);
+  const usable = v.length - (v.length % 9);
+  if (!usable) throw new Error("В STL нет треугольников");
+  return new Float32Array(v.slice(0, usable));
+}
+
+function parseOBJ(text) {
+  const verts = [];
+  const tris = [];
+  const lines = text.split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.replace(/#.*/, "").trim();
+    const kw = line.match(/^(v|f)\s+/);
+    if (!kw) continue;
+    const p = line.slice(kw[0].length).split(/\s+/);
+    if (kw[1] === "v") {
+      verts.push(+p[0], +p[1], +p[2]);
+    } else {
+      const count = verts.length / 3;
+      const idx = p.map(t => {
+        const i = parseInt(t.split("/")[0], 10);
+        return i < 0 ? count + i : i - 1;
+      });
+      for (let k = 1; k + 1 < idx.length; k++) tris.push(idx[0], idx[k], idx[k + 1]);
+    }
+  }
+  if (!tris.length) throw new Error("В OBJ нет граней");
+  const nv = verts.length / 3;
+  for (const i of tris) {
+    if (!Number.isInteger(i) || i < 0 || i >= nv) throw new Error("В OBJ грань ссылается на несуществующую вершину");
+  }
+  const out = new Float32Array(tris.length * 3);
+  for (let i = 0; i < tris.length; i++) {
+    const j = tris[i] * 3;
+    out[i * 3] = verts[j]; out[i * 3 + 1] = verts[j + 1]; out[i * 3 + 2] = verts[j + 2];
+  }
+  return out;
+}
+
+/* 3MF: на вход уже распакованный архив {путь: Uint8Array}. */
+const UNIT_MM = { micron: 0.001, millimeter: 1, centimeter: 10, inch: 25.4, foot: 304.8, meter: 1000 };
+const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+
+function xmlAttr(tag, name) {
+  const re = new RegExp("(?:^|\\s)(?:[\\w-]+:)?" + name + "\\s*=\\s*\"([^\"]*)\"");
+  const m = tag.match(re);
+  return m ? m[1] : null;
+}
+
+function parseMatrix(s) {
+  if (!s) return IDENTITY;
+  const v = s.trim().split(/\s+/).map(Number);
+  return v.length === 12 && v.every(Number.isFinite) ? v : IDENTITY;
+}
+
+/* Сначала a, потом b: точка p * a * b. */
+function mulMatrix(a, b) {
+  return [
+    a[0] * b[0] + a[1] * b[3] + a[2] * b[6],
+    a[0] * b[1] + a[1] * b[4] + a[2] * b[7],
+    a[0] * b[2] + a[1] * b[5] + a[2] * b[8],
+    a[3] * b[0] + a[4] * b[3] + a[5] * b[6],
+    a[3] * b[1] + a[4] * b[4] + a[5] * b[7],
+    a[3] * b[2] + a[4] * b[5] + a[5] * b[8],
+    a[6] * b[0] + a[7] * b[3] + a[8] * b[6],
+    a[6] * b[1] + a[7] * b[4] + a[8] * b[7],
+    a[6] * b[2] + a[7] * b[5] + a[8] * b[8],
+    a[9] * b[0] + a[10] * b[3] + a[11] * b[6] + b[9],
+    a[9] * b[1] + a[10] * b[4] + a[11] * b[7] + b[10],
+    a[9] * b[2] + a[10] * b[5] + a[11] * b[8] + b[11],
+  ];
+}
+
+function parseModelXML(xml) {
+  const unitM = xml.match(/<model\b[^>]*?\bunit\s*=\s*"([^"]+)"/);
+  const objects = new Map();
+  const objRe = /<object\b([^>]*)>([\s\S]*?)<\/object>/g;
+  let m;
+  while ((m = objRe.exec(xml))) {
+    const id = xmlAttr(m[1], "id");
+    const type = xmlAttr(m[1], "type") || "model";
+    const body = m[2];
+    const obj = { type, mesh: null, components: [] };
+    const meshM = body.match(/<mesh\b[\s\S]*?<\/mesh>/);
+    if (meshM) {
+      const verts = [];
+      const vRe = /<vertex\b([^>]*?)\/?>/g;
+      let vm;
+      while ((vm = vRe.exec(meshM[0]))) {
+        verts.push(+xmlAttr(vm[1], "x"), +xmlAttr(vm[1], "y"), +xmlAttr(vm[1], "z"));
+      }
+      const tris = [];
+      const tRe = /<triangle\b([^>]*?)\/?>/g;
+      let tm;
+      while ((tm = tRe.exec(meshM[0]))) {
+        tris.push(+xmlAttr(tm[1], "v1"), +xmlAttr(tm[1], "v2"), +xmlAttr(tm[1], "v3"));
+      }
+      obj.mesh = { verts: Float64Array.from(verts), tris: Uint32Array.from(tris) };
+    }
+    const cRe = /<component\b([^>]*?)\/?>/g;
+    let cm;
+    while ((cm = cRe.exec(body))) {
+      obj.components.push({
+        path: xmlAttr(cm[1], "path"),
+        objectid: xmlAttr(cm[1], "objectid"),
+        m: parseMatrix(xmlAttr(cm[1], "transform")),
+      });
+    }
+    objects.set(id, obj);
+  }
+  const build = [];
+  const buildM = xml.match(/<build\b[\s\S]*?<\/build>/);
+  if (buildM) {
+    const iRe = /<item\b([^>]*?)\/?>/g;
+    let im;
+    while ((im = iRe.exec(buildM[0]))) {
+      if (xmlAttr(im[1], "printable") === "0") continue;
+      build.push({
+        objectid: xmlAttr(im[1], "objectid"),
+        path: xmlAttr(im[1], "path"),
+        m: parseMatrix(xmlAttr(im[1], "transform")),
+      });
+    }
+  }
+  return { unit: unitM ? unitM[1] : "millimeter", objects, build };
+}
+
+/* PrusaSlicer пишет детали, модификаторы и вырезы одного объекта в одну сетку,
+   а тип каждого куска хранит в Metadata/Slic3r_PE_model.config диапазонами треугольников. */
+function parsePrusaConfig(xml) {
+  const map = new Map();
+  const oRe = /<object\b([^>]*)>([\s\S]*?)<\/object>/g;
+  let o;
+  while ((o = oRe.exec(xml))) {
+    const vols = [];
+    const vRe = /<volume\b([^>]*)>([\s\S]*?)<\/volume>/g;
+    let v;
+    while ((v = vRe.exec(o[2]))) {
+      const first = parseInt(xmlAttr(v[1], "firstid"), 10);
+      const last = parseInt(xmlAttr(v[1], "lastid"), 10);
+      const meta = {};
+      const mRe = /<metadata\b([^>]*?)\/?>/g;
+      let mm;
+      while ((mm = mRe.exec(v[2]))) meta[xmlAttr(mm[1], "key")] = xmlAttr(mm[1], "value");
+      const part = meta.volume_type ? meta.volume_type === "ModelPart" : meta.modifier !== "1";
+      if (Number.isFinite(first) && Number.isFinite(last)) vols.push({ first, last, part });
+    }
+    if (vols.length) map.set(xmlAttr(o[1], "id"), vols);
+  }
+  return map;
+}
+
+const det3 = M => M[0] * (M[4] * M[8] - M[5] * M[7]) - M[1] * (M[3] * M[8] - M[5] * M[6]) + M[2] * (M[3] * M[7] - M[4] * M[6]);
+
+function parse3MF(files) {
+  const dec = new TextDecoder();
+  const keys = Object.keys(files);
+  const find = p => {
+    const want = String(p || "").replace(/^\//, "").toLowerCase();
+    return keys.find(k => k.replace(/^\//, "").toLowerCase() === want) || null;
+  };
+  let rootKey = null;
+  const relsKey = find("_rels/.rels");
+  if (relsKey) {
+    const rels = dec.decode(files[relsKey]);
+    const relRe = /<Relationship\b([^>]*?)\/?>/g;
+    let r;
+    while ((r = relRe.exec(rels))) {
+      const type = xmlAttr(r[1], "Type") || "";
+      if (/\/3dmodel$/i.test(type)) { rootKey = find(xmlAttr(r[1], "Target")); break; }
+    }
+  }
+  if (!rootKey) rootKey = find("3D/3dmodel.model") || keys.find(k => /\.model$/i.test(k));
+  if (!rootKey) throw new Error("В архиве 3MF нет файла модели");
+
+  const docs = new Map();
+  const load = key => {
+    if (!docs.has(key)) docs.set(key, parseModelXML(dec.decode(files[key])));
+    return docs.get(key);
+  };
+  const root = load(rootKey);
+  const result = [];
+  const prusaKey = find("Metadata/Slic3r_PE_model.config");
+  const prusa = prusaKey ? parsePrusaConfig(dec.decode(files[prusaKey])) : new Map();
+  const skipped = { objects: 0, modifiers: 0 };
+
+  /* Пластик дают только сплошные тела: model и solidsupport. support, surface и other
+     (в Bambu Studio так записаны вырезы) пропускаются, о пропуске сообщаем. */
+  const SOLID = new Set(["model", "solidsupport"]);
+  const emit = (docKey, id, M, acc, depth) => {
+    if (depth > 24) return;
+    const doc = load(docKey);
+    const obj = doc.objects.get(id);
+    if (!obj) return;
+    if (!SOLID.has(obj.type)) { skipped.objects++; return; }
+    if (obj.mesh) {
+      const { verts, tris } = obj.mesh;
+      const ranges = docKey === rootKey ? prusa.get(id) : null;
+      const flip = det3(M) < 0;
+      const order = flip ? [0, 2, 1] : [0, 1, 2];
+      let skippedTris = 0;
+      for (let t = 0; t + 2 < tris.length; t += 3) {
+        if (ranges) {
+          const r = ranges.find(v => t / 3 >= v.first && t / 3 <= v.last);
+          if (r && !r.part) { skippedTris++; continue; }
+        }
+        for (const k of order) {
+          const j = tris[t + k] * 3;
+          const x = verts[j], y = verts[j + 1], z = verts[j + 2];
+          acc.push(
+            x * M[0] + y * M[3] + z * M[6] + M[9],
+            x * M[1] + y * M[4] + z * M[7] + M[10],
+            x * M[2] + y * M[5] + z * M[8] + M[11]
+          );
+        }
+      }
+      if (skippedTris) skipped.modifiers++;
+    }
+    for (const c of obj.components) {
+      const childKey = c.path ? find(c.path) : docKey;
+      if (childKey) emit(childKey, c.objectid, mulMatrix(c.m, M), acc, depth + 1);
+    }
+  };
+
+  const items = root.build.length
+    ? root.build
+    : [...root.objects.keys()].map(id => ({ objectid: id, path: null, m: IDENTITY }));
+  for (const item of items) {
+    const acc = [];
+    const itemKey = item.path ? find(item.path) : rootKey;
+    if (itemKey) emit(itemKey, item.objectid, item.m, acc, 0);
+    if (acc.length >= 9) result.push(new Float32Array(acc));
+  }
+  if (!result.length) throw new Error("В 3MF не нашлось ни одной модели");
+  return { objects: result, unitToMm: UNIT_MM[root.unit] || 1, skipped };
+}
+
+/* Объём (знаковая сумма тетраэдров), площадь поверхности и габариты. */
+function meshStats(pos) {
+  let vol = 0, area = 0;
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i + 8 < pos.length; i += 9) {
+    const ax = pos[i], ay = pos[i + 1], az = pos[i + 2];
+    const bx = pos[i + 3], by = pos[i + 4], bz = pos[i + 5];
+    const cx = pos[i + 6], cy = pos[i + 7], cz = pos[i + 8];
+    vol += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+    const ux = bx - ax, uy = by - ay, uz = bz - az;
+    const vx = cx - ax, vy = cy - ay, vz = cz - az;
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    area += Math.sqrt(nx * nx + ny * ny + nz * nz) / 2;
+    for (let k = 0; k < 9; k += 3) {
+      for (let d = 0; d < 3; d++) {
+        const c = pos[i + k + d];
+        if (c < min[d]) min[d] = c;
+        if (c > max[d]) max[d] = c;
+      }
+    }
+  }
+  return { signedVolume: vol / 6, volume: Math.abs(vol / 6), area, min, max, triangles: Math.floor(pos.length / 9) };
+}
+
+/* Сварка вершин по точным значениям Float32: в STL, OBJ и 3MF общие вершины записаны
+   одинаковыми числами. Сварка с допуском склеивала соседние вершины мелких деталей. */
+function weld(pos) {
+  const f = ArrayBuffer.isView(pos) && pos.BYTES_PER_ELEMENT === 4 && !(pos instanceof Uint32Array) ? pos : Float32Array.from(pos);
+  const bits = new Uint32Array(f.buffer, f.byteOffset, f.length);
+  const key = i => (f[i] === 0 ? 0 : bits[i]);
+  const ids = new Map();
+  const corners = Math.floor(f.length / 9) * 3;
+  const vid = new Uint32Array(corners);
+  for (let c = 0; c < corners; c++) {
+    const i = c * 3;
+    const k = key(i) + "," + key(i + 1) + "," + key(i + 2);
+    let v = ids.get(k);
+    if (v === undefined) { v = ids.size; ids.set(k, v); }
+    vid[c] = v;
+  }
+  return { vid, count: ids.size };
+}
+
+/* Дыры и перевёрнутые грани: у замкнутой сетки каждое ребро пройдено столько же раз туда,
+   сколько обратно. Касающиеся оболочки (ребро у четырёх граней) этому не мешают. */
+function checkClosed(pos, welded) {
+  const { vid } = welded || weld(pos);
+  const edges = new Map();
+  for (let t = 0; t + 2 < vid.length; t += 3) {
+    const a = vid[t], b = vid[t + 1], c = vid[t + 2];
+    if (a === b || b === c || a === c) continue;
+    for (const [p, r] of [[a, b], [b, c], [c, a]]) {
+      const k = p < r ? p * 4294967296 + r : r * 4294967296 + p;
+      edges.set(k, (edges.get(k) || 0) + (p < r ? 1 : -1));
+    }
+  }
+  let open = 0;
+  for (const n of edges.values()) if (n !== 0) open++;
+  return { open };
+}
+
+/* Отдельные части модели (связные куски сетки): номер части для каждого треугольника. */
+function meshComponents(pos, welded) {
+  const { vid, count } = welded || weld(pos);
+  const parent = new Uint32Array(count);
+  for (let i = 0; i < count; i++) parent[i] = i;
+  const find = x => {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  };
+  const unite = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+  for (let t = 0; t + 2 < vid.length; t += 3) { unite(vid[t], vid[t + 1]); unite(vid[t + 1], vid[t + 2]); }
+  const label = new Map();
+  const tri = new Uint32Array(vid.length / 3);
+  for (let t = 0; t < tri.length; t++) {
+    const r = find(vid[t * 3]);
+    let l = label.get(r);
+    if (l === undefined) { l = label.size; label.set(r, l); }
+    tri[t] = l;
+  }
+  return { count: label.size, tri };
+}
+
+/* Объём со знаком и площадь каждой части по номерам из meshComponents. */
+function componentStats(pos, tri, count) {
+  const vol = new Float64Array(count), area = new Float64Array(count);
+  for (let t = 0, i = 0; t < tri.length; t++, i += 9) {
+    const ax = pos[i], ay = pos[i + 1], az = pos[i + 2];
+    const bx = pos[i + 3], by = pos[i + 4], bz = pos[i + 5];
+    const cx = pos[i + 6], cy = pos[i + 7], cz = pos[i + 8];
+    const l = tri[t];
+    vol[l] += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+    const ux = bx - ax, uy = by - ay, uz = bz - az;
+    const vx = cx - ax, vy = cy - ay, vz = cz - az;
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    area[l] += Math.sqrt(nx * nx + ny * ny + nz * nz) / 2;
+  }
+  return Array.from(vol, (v, l) => ({ signedVolume: v / 6, area: area[l] }));
+}
+
+/* Тела одного объекта для расчёта стенок: у каждого тела свои стенки, иначе тонкая пластина
+   рядом с большой деталью получает лишний пластик. Если среди частей есть полость (объём
+   другого знака), части не разделяем: полость относится к своей внешней оболочке. */
+function bodyStats(pos, tri, count) {
+  if (count <= 1) return null;
+  const parts = componentStats(pos, tri, count);
+  const eps = parts.reduce((s, p) => s + Math.abs(p.signedVolume), 0) * 1e-9;
+  const plus = parts.some(p => p.signedVolume > eps), minus = parts.some(p => p.signedVolume < -eps);
+  if (plus && minus) return null;
+  return parts.map(p => ({ volume: Math.abs(p.signedVolume), area: p.area }));
+}
+
+/* Вес по объёму: стенки и крышки сплошные (площадь x толщина оболочки), внутри заполнение. */
+function estimateGrams(volumeMm3, areaMm2, opts) {
+  const shell = Math.min(volumeMm3, areaMm2 * opts.shellMm);
+  const plastic = shell + (volumeMm3 - shell) * opts.infill;
+  return (plastic / 1000) * opts.density * (1 + opts.extra);
+}
+
+/* Вес так, как его видит клиент: до 0,1 г меньше 10 г, дальше до грамма. */
+function shownGrams(g) {
+  return g < 10 ? Math.round(g * 10) / 10 : Math.round(g);
+}
+
+/* Цена считается от показанного веса, поэтому строка «вес × цена» всегда сходится. */
+function quote(totalGrams, pricePerGram, minOrder) {
+  const grams = shownGrams(totalGrams);
+  const raw = Math.round(grams * pricePerGram * 100) / 100;
+  const byWeight = Math.ceil(raw - 1e-9);
+  return { grams, raw, byWeight, total: Math.max(minOrder, byWeight), minApplied: byWeight < minOrder };
+}
+
+/* Модель-пример: шестерня с отверстием, нормали наружу. */
+function makeGear(o) {
+  const T = o.teeth, H = o.height;
+  const prof = [[0, 0], [0.125, 0], [0.25, 0], [0.35, 1], [0.5, 1], [0.65, 1], [0.75, 0], [0.875, 0]];
+  const ang = [], rad = [];
+  for (let t = 0; t < T; t++) {
+    for (const [f, tip] of prof) {
+      ang.push(((t + f) / T) * Math.PI * 2);
+      rad.push(tip ? o.rTip : o.rRoot);
+    }
+  }
+  const n = ang.length;
+  const out = [];
+  const P = (r, a, z) => [r * Math.cos(a), r * Math.sin(a), z];
+  const tri = (a, b, c) => out.push(...a, ...b, ...c);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const I0t = P(o.rHole, ang[i], H), I1t = P(o.rHole, ang[j], H);
+    const O0t = P(rad[i], ang[i], H), O1t = P(rad[j], ang[j], H);
+    const I0b = P(o.rHole, ang[i], 0), I1b = P(o.rHole, ang[j], 0);
+    const O0b = P(rad[i], ang[i], 0), O1b = P(rad[j], ang[j], 0);
+    tri(I0t, O0t, O1t); tri(I0t, O1t, I1t);
+    tri(I0b, O1b, O0b); tri(I0b, I1b, O1b);
+    tri(O0b, O1b, O1t); tri(O0b, O1t, O0t);
+    tri(I0b, I1t, I1b); tri(I0b, I0t, I1t);
+  }
+  return new Float32Array(out);
+}
+</script>
+
+<script>
+(function () {
+  "use strict";
+
+  /* Настройки мастерской. Цены, минимальный заказ, стол принтера и цвета меняются здесь. */
+  const CFG = {
+    minOrder: 100,
+    printer: "Bambu Lab A1",
+    buildMm: [256, 256, 256],
+    waste: 0.03,
+    supports: 0.15,
+    contactUrl: "https://www.avito.ru/user/88d523b1a30b04846ac75f1177f00899/profile",
+    materials: [
+      { id: "PLA", name: "PLA", note: "декор, фигурки, макеты", density: 1.24, price: 2 },
+      { id: "PETG", name: "PETG", note: "прочный, только оливковый", density: 1.27, price: 2 },
+    ],
+    presets: [
+      { id: "decor", name: "Декор, фигурка", infill: 0.15, shellMm: 0.9 },
+      { id: "normal", name: "Бытовая деталь", infill: 0.25, shellMm: 1.2 },
+      { id: "strong", name: "Под нагрузкой", infill: 0.5, shellMm: 1.6 },
+      { id: "solid", name: "Сплошная", infill: 1, shellMm: 1.6 },
+    ],
+    /* Катушки в наличии: ELEGOO матовый PLA, eSUN PLA+, ELEGOO PETG. */
+    colors: [
+      { id: "white", name: "белый", hex: "#F1F0EB", materials: ["PLA"] },
+      { id: "black", name: "чёрный", hex: "#252524", materials: ["PLA"] },
+      { id: "sakura", name: "розовая сакура", hex: "#F6BBCE", materials: ["PLA"] },
+      { id: "almond", name: "миндальный жёлтый", hex: "#E2D08A", materials: ["PLA"] },
+      { id: "khaki", name: "светлый хаки", hex: "#B3A283", materials: ["PLA"] },
+      { id: "olive", name: "оливковый", hex: "#808752", materials: ["PETG"] },
+      { id: "mix", name: "микс", mix: true, materials: ["PLA"] },
+    ],
+  };
+  /* Цвета частей в превью для «микса». */
+  const MIX_PALETTE = ["#F1F0EB", "#F6BBCE", "#E2D08A", "#B3A283", "#252524"];
+  const UNIT_NAMES = { "1": "миллиметры", "10": "сантиметры", "25.4": "дюймы", "1000": "метры" };
+
+  const $ = id => document.getElementById(id);
+  const num = (n, d = 0) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
+  const rub = n => num(n, Number.isInteger(n) ? 0 : 2) + " ₽";
+  const grams = g => (g < 10 ? num(g, 1) : num(g, 0)) + " г";
+  const mm = v => (v < 10 ? num(v, 1) : num(v, 0));
+  const unitMm = v => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(v) + " мм";
+  const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1);
+
+  const state = {
+    models: [],
+    selected: null,
+    material: "PLA",
+    color: "white",
+    lastColor: { PLA: "white", PETG: "olive" },
+    preset: "decor",
+    supports: false,
+  };
+  let uid = 0;
+
+  const material = () => CFG.materials.find(m => m.id === state.material);
+  const preset = () => CFG.presets.find(p => p.id === state.preset);
+  const color = () => CFG.colors.find(c => c.id === state.color);
+  const selectedModel = () => state.models.find(m => m.id === state.selected) || null;
+
+  /* ---------- модели ---------- */
+
+  function addModel(name, objects, unitToMm, opts = {}) {
+    const stats = objects.map(meshStats);
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    let triangles = 0;
+    for (const s of stats) {
+      if (!Number.isFinite(s.volume) || !Number.isFinite(s.area)) throw new Error("в файле некорректные координаты");
+      triangles += s.triangles;
+      for (let d = 0; d < 3; d++) { min[d] = Math.min(min[d], s.min[d]); max[d] = Math.max(max[d], s.max[d]); }
+    }
+    /* Проверка сетки и поиск отдельных частей только для моделей до 300 тыс. треугольников, иначе долго.
+       У больших моделей число частей неизвестно (null). */
+    let closed = null, comps = null, parts = null;
+    /* Объём и площадь для веса: по телам, если сетку удалось разобрать, иначе по объектам. */
+    let bodies = stats.map(s => ({ volume: s.volume, area: s.area }));
+    if (triangles <= 300000) {
+      closed = { open: 0 };
+      comps = [];
+      parts = 0;
+      const split = [];
+      objects.forEach((pos, j) => {
+        const w = weld(pos);
+        closed.open += checkClosed(pos, w).open;
+        const mc = meshComponents(pos, w);
+        comps.push({ tri: mc.tri, offset: parts });
+        parts += mc.count;
+        split.push(...(bodyStats(pos, mc.tri, mc.count) || [bodies[j]]));
+      });
+      bodies = split;
+    }
+    const model = {
+      id: ++uid, name, objects, isSample: !!opts.sample,
+      base: {
+        min, max, triangles,
+        objStats: bodies,
+        objDims: stats.map(s => s.max.map((v, d) => v - s.min[d])),
+      },
+      closed, comps, parts, skipped: opts.skipped || null,
+      unit: unitToMm || 1, fileUnit: unitToMm || 1, scalePct: 100, qty: opts.qty || 1,
+    };
+    if (!opts.sample) state.models = state.models.filter(m => !m.isSample);
+    state.models.push(model);
+    state.selected = model.id;
+    renderAll();
+    stageShow(model);
+  }
+
+  const totalParts = () => state.models.reduce((n, m) => (n === null || m.parts === null ? null : n + m.parts), 0);
+
+  function figures(m) {
+    const s = m.unit * m.scalePct / 100;
+    const dims = m.base.max.map((v, d) => (v - m.base.min[d]) * s);
+    const mat = material(), pr = preset();
+    const opts = {
+      shellMm: pr.shellMm, infill: pr.infill, density: mat.density,
+      extra: CFG.waste + (state.supports ? CFG.supports : 0),
+    };
+    /* Стенки считаются для каждого тела отдельно, иначе тонкая деталь получает лишний пластик. */
+    const each = m.base.objStats.reduce((g, o) => g + estimateGrams(o.volume * s * s * s, o.area * s * s, opts), 0);
+    const bed = [...CFG.buildMm].sort((a, b) => b - a);
+    const fits = m.base.objDims.every(od => {
+      const d = od.map(v => v * s).sort((a, b) => b - a);
+      return d[0] <= bed[0] + 0.01 && d[1] <= bed[1] + 0.01 && d[2] <= bed[2] + 0.01;
+    });
+    const flags = [];
+    if (!fits) flags.push({ cls: "", text: "Не помещается на стол " + CFG.buildMm.join("×") + " мм: напишите, обсудим печать частями" });
+    if (m.closed && m.closed.open) flags.push({ cls: "", text: "В сетке модели есть дыры: вес может отличаться" });
+    if (m.skipped && (m.skipped.objects || m.skipped.modifiers)) flags.push({ cls: "note", text: "В файле есть модификаторы, вырезы или поддержки: их не считаем, точный вес покажет слайсер" });
+    if (Math.max(...dims) < 3) flags.push({ cls: "note", text: "Очень маленькая модель: проверьте единицы файла" });
+    if (color().mix && m.parts === 1 && totalParts() === 1) flags.push({ cls: "note", text: "Модель цельная: для микса её нужно разделить на части, обсудим в сообщениях" });
+    if (m.isSample) flags.push({ cls: "note", text: "Пример. Загрузите свою модель" });
+    return { s, dims, each, total: each * m.qty, flags };
+  }
+
+  /* ---------- отрисовка ---------- */
+
+  function renderTerms() {
+    const mats = CFG.materials;
+    const cheapest = Math.min(...mats.map(m => m.price));
+    $("terms").innerHTML = "";
+    const items = [
+      [num(cheapest) + " ₽ / г", mats.map(m => m.name).join(" и ")],
+      ["0 ₽", "за запуск и подготовку"],
+      [rub(CFG.minOrder), "минимальный заказ"],
+      [CFG.buildMm.join("×"), "стол " + CFG.printer + ", мм"],
+    ];
+    for (const [b, s] of items) {
+      const el = document.createElement("div");
+      el.className = "term";
+      el.innerHTML = "<b></b><span></span>";
+      el.firstChild.textContent = b;
+      el.lastChild.textContent = s;
+      $("terms").append(el);
+    }
+    $("footSpecs").textContent = "Печать FDM на " + CFG.printer + ", сопло 0,4 мм. Многоцветной печати в один проход нет: части разных цветов печатаются отдельно и собираются, для этого выберите цвет «микс». Вес считается по объёму модели: сплошные стенки и крышки, внутри заполнение. Погрешность оценки около 20%.";
+  }
+
+  function renderOptions() {
+    const mats = $("materials");
+    mats.innerHTML = "";
+    for (const m of CFG.materials) {
+      const l = document.createElement("label");
+      l.innerHTML = '<input type="radio" name="material"><span><b></b><small></small></span>';
+      const input = l.querySelector("input");
+      input.id = "mat-" + m.id; input.value = m.id; input.checked = m.id === state.material;
+      l.querySelector("b").textContent = m.name + " · " + num(m.price) + " ₽/г";
+      l.querySelector("small").textContent = m.note;
+      mats.append(l);
+    }
+    renderColors();
+    const pres = $("presets");
+    pres.innerHTML = "";
+    for (const p of CFG.presets) {
+      const l = document.createElement("label");
+      l.innerHTML = '<input type="radio" name="preset"><span><b></b><small></small></span>';
+      const input = l.querySelector("input");
+      input.id = "pre-" + p.id; input.value = p.id; input.checked = p.id === state.preset;
+      l.querySelector("b").textContent = p.name;
+      l.querySelector("small").textContent = "заполнение " + Math.round(p.infill * 100) + "%";
+      pres.append(l);
+    }
+  }
+
+  /* Цвета зависят от пластика: показываем только катушки выбранного материала. */
+  const colorsFor = matId => CFG.colors.filter(c => c.materials.includes(matId));
+  const mixGradient = () => "conic-gradient(" + MIX_PALETTE.map((h, i) =>
+    h + " " + Math.round((i / MIX_PALETTE.length) * 100) + "% " + Math.round(((i + 1) / MIX_PALETTE.length) * 100) + "%").join(", ") + ")";
+
+  function renderColors() {
+    const avail = colorsFor(state.material);
+    if (!avail.some(c => c.id === state.color)) {
+      const remembered = state.lastColor[state.material];
+      state.color = avail.some(c => c.id === remembered) ? remembered : avail[0].id;
+    }
+    const cols = $("colors");
+    cols.innerHTML = "";
+    for (const c of avail) {
+      const l = document.createElement("label");
+      l.className = "swatch";
+      l.title = c.name;
+      l.innerHTML = '<input type="radio" name="color"><span></span>';
+      const input = l.querySelector("input");
+      input.id = "col-" + c.id; input.value = c.id; input.checked = c.id === state.color;
+      input.setAttribute("aria-label", c.name);
+      l.querySelector("span").style.background = c.mix ? mixGradient() : c.hex;
+      cols.append(l);
+    }
+  }
+
+  function renderColorName() {
+    $("colorName").innerHTML = "";
+    const c = color();
+    const b = document.createElement("span");
+    const m = document.createElement("span");
+    m.className = "muted";
+    if (c.mix) {
+      b.textContent = "Цвет: микс. ";
+      m.textContent = "Каждая часть модели печатается своим цветом из наличия PLA. Какую часть каким цветом, обсудим в сообщениях.";
+    } else {
+      b.textContent = "Цвет: " + c.name + ". ";
+      m.textContent = state.material === "PETG"
+        ? "PETG сейчас есть только оливковый. Другие цвета есть в PLA."
+        : "Нужен другой цвет? Напишите, подберём.";
+    }
+    $("colorName").append(b, m);
+  }
+
+  /* Строки списка создаются один раз и дальше только обновляются: так не теряются фокус и клики. */
+  const rows = new Map();
+
+  function rowFor(m) {
+    let li = rows.get(m.id);
+    if (li) return li;
+    li = document.createElement("li");
+    li.className = "model";
+    li.tabIndex = 0;
+    li.dataset.id = m.id;
+    li.innerHTML =
+      '<div class="model-main"><div class="model-name"></div><div class="model-meta"></div><div class="model-flags"></div></div>' +
+      '<div class="qty"><button type="button" data-act="dec" aria-label="Меньше">−</button>' +
+      '<input type="number" min="1" max="999" inputmode="numeric" aria-label="Количество">' +
+      '<button type="button" data-act="inc" aria-label="Больше">+</button></div>' +
+      '<button type="button" class="del" data-act="del" aria-label="Убрать модель">×</button>';
+    li.querySelector(".model-name").textContent = m.name;
+    li.querySelector("input").id = "qty-" + m.id;
+    rows.set(m.id, li);
+    return li;
+  }
+
+  function renderModels() {
+    const list = $("models");
+    const n = state.models.length;
+    $("modelsCount").textContent = n ? n + " " + plural(n, "файл", "файла", "файлов") : "";
+    $("modelsEmpty").hidden = n > 0;
+    for (const [id, li] of rows) {
+      if (!state.models.some(m => m.id === id)) { li.remove(); rows.delete(id); }
+    }
+    state.models.forEach((m, i) => {
+      const li = rowFor(m);
+      if (list.children[i] !== li) list.insertBefore(li, list.children[i] || null);
+      const sel = m.id === state.selected;
+      li.classList.toggle("sel", sel);
+      if (sel) li.setAttribute("aria-current", "true"); else li.removeAttribute("aria-current");
+      const f = figures(m);
+      li.querySelector(".model-meta").textContent =
+        f.dims.map(mm).join("×") + " мм · " + grams(f.each) + " за шт." +
+        (m.parts > 1 ? " · " + m.parts + " " + plural(m.parts, "часть", "части", "частей") : "");
+      const qi = li.querySelector("input");
+      if (document.activeElement !== qi) qi.value = m.qty;
+      const flags = li.querySelector(".model-flags");
+      flags.replaceChildren(...f.flags.map(fl => {
+        const s = document.createElement("span");
+        s.className = "flag " + fl.cls;
+        s.textContent = fl.text;
+        return s;
+      }));
+      flags.hidden = !f.flags.length;
+    });
+  }
+
+  function renderModelOpts() {
+    const m = selectedModel();
+    $("modelOpts").hidden = !m;
+    if (!m) return;
+    const unit = $("unit");
+    unit.querySelectorAll("option[data-dyn]").forEach(o => o.remove());
+    /* Нестандартная единица файла (футы, микроны) остаётся в списке и после выбора другой. */
+    if (!UNIT_NAMES[String(m.fileUnit)]) {
+      const o = document.createElement("option");
+      o.dataset.dyn = "1";
+      o.value = String(m.fileUnit);
+      o.textContent = "из файла (" + unitMm(m.fileUnit) + ")";
+      unit.append(o);
+    }
+    unit.value = String(m.unit);
+    if (document.activeElement !== $("scale")) $("scale").value = m.scalePct;
+    const f = figures(m);
+    $("dims").textContent = "Габарит " + f.dims.map(mm).join(" × ") + " мм";
+  }
+
+  function totals() {
+    let g = 0, pieces = 0;
+    for (const m of state.models) { const f = figures(m); g += f.total; pieces += m.qty; }
+    return { pieces, q: quote(g, material().price, CFG.minOrder) };
+  }
+
+  function renderTotals() {
+    const mat = material(), pr = preset();
+    const t = totals();
+    $("spoolMat").textContent = mat.name + " · " + color().name;
+    $("spoolSpec").textContent = "заполнение " + Math.round(pr.infill * 100) + "%" + (state.supports ? " · поддержки" : "");
+    $("grams").textContent = state.models.length ? grams(t.q.grams) : "0 г";
+    $("pieces").textContent = num(t.pieces);
+    if (!state.models.length) {
+      $("price").textContent = "…";
+      $("formula").textContent = "Загрузите модель, и здесь появится цена.";
+      return;
+    }
+    $("price").textContent = rub(t.q.total);
+    let f = grams(t.q.grams) + " × " + num(mat.price) + " ₽/г = " + rub(t.q.raw);
+    if (t.q.minApplied) f += ". Минимальный заказ " + rub(CFG.minOrder) + ".";
+    else if (t.q.byWeight !== t.q.raw) f += ", округляем до " + rub(t.q.byWeight) + ".";
+    $("formula").textContent = f;
+  }
+
+  function renderAll() {
+    renderModels();
+    renderModelOpts();
+    renderTotals();
+    renderColorName();
+    $("copyFallback").hidden = true;
+    flash("");
+  }
+
+  function plural(n, one, few, many) {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return one;
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
+    return many;
+  }
+
+  /* ---------- текст для отправки ---------- */
+
+  function orderText() {
+    const mat = material(), pr = preset();
+    const t = totals();
+    const lines = ["Заявка на 3D-печать", ""];
+    state.models.forEach((m, i) => {
+      const f = figures(m);
+      let line = (i + 1) + ". " + m.name + ": " + m.qty + " шт., " + f.dims.map(mm).join("×") + " мм, около " + grams(f.each) + " за шт.";
+      const notes = [];
+      if (m.unit !== m.fileUnit) notes.push("единицы файла: " + (UNIT_NAMES[String(m.unit)] || unitMm(m.unit)));
+      if (m.scalePct !== 100) notes.push("масштаб " + num(m.scalePct, 1) + "%");
+      if (notes.length) line += " (" + notes.join(", ") + ")";
+      lines.push(line);
+    });
+    lines.push("");
+    lines.push("Пластик: " + mat.name + ", цвет: " + (color().mix ? "микс (части разных цветов, распределение обсудим)" : color().name));
+    lines.push("Назначение: " + pr.name.toLowerCase() + " (заполнение " + Math.round(pr.infill * 100) + "%), поддержки: " + (state.supports ? "нужны" : "не нужны"));
+    lines.push("Всего пластика: около " + grams(t.q.grams));
+    lines.push("Предварительная цена: " + rub(t.q.total));
+    lines.push("");
+    lines.push("Ссылка на модель: ");
+    return lines.join("\n").replace(/ /g, " ");
+  }
+
+  /* ---------- загрузка файлов ---------- */
+
+  async function handleFiles(fileList) {
+    const files = [...fileList];
+    const errors = [];
+    showFileErrors([]);
+    for (const file of files) {
+      try {
+        const buf = await file.arrayBuffer();
+        const ext = (file.name.includes(".") ? file.name.split(".").pop() : "").toLowerCase();
+        const head = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+        const isZip = head[0] === 0x50 && head[1] === 0x4b;
+        if (ext === "3mf" || isZip) {
+          if (!window.fflate) throw new Error("не загрузился распаковщик 3MF, обновите страницу");
+          let unz;
+          try {
+            unz = window.fflate.unzipSync(new Uint8Array(buf), { filter: f => /\.(model|rels|config)$/i.test(f.name) });
+          } catch (e) {
+            throw new Error("файл повреждён или это не архив 3MF");
+          }
+          const r = parse3MF(unz);
+          addModel(file.name, r.objects, r.unitToMm, { skipped: r.skipped });
+        } else if (ext === "obj") {
+          addModel(file.name, [parseOBJ(new TextDecoder().decode(new Uint8Array(buf)))], 1);
+        } else if (ext === "stl") {
+          addModel(file.name, [parseSTL(buf)], 1);
+        } else {
+          throw new Error(ext ? "формат ." + ext + " не поддерживается" : "непонятный формат файла");
+        }
+      } catch (e) {
+        errors.push("«" + file.name + "»: " + lowerFirst(e && e.message ? e.message : String(e)));
+      }
+    }
+    showFileErrors(errors);
+  }
+
+  /* Ошибки чтения показываем прямо под 3D-видом, рядом с кнопкой загрузки. */
+  function showFileErrors(errors) {
+    const el = $("fileNote");
+    el.hidden = !errors.length;
+    el.textContent = errors.length
+      ? "Не получилось прочитать " + errors.join("; ") + ". Подходят файлы STL, 3MF и OBJ."
+      : "";
+    /* На невысоком экране заметка ниже края: докручиваем к ней, кнопка загрузки остаётся видна. */
+    if (errors.length && el.scrollIntoView) {
+      const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ block: "nearest", behavior: calm ? "auto" : "smooth" });
+    }
+  }
+
+  function flash(text) {
+    $("copyNote").textContent = text;
+  }
+
+  /* ---------- 3D-вид ---------- */
+
+  const stage = { ok: false };
+
+  function stageInit() {
+    if (!window.THREE || !THREE.OrbitControls) {
+      $("stageEmpty").hidden = false;
+      $("stageEmpty").textContent = "Трёхмерный вид не загрузился, но расчёт работает.";
+      $("stageHint").hidden = true;
+      return;
+    }
+    const canvas = $("view");
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    } catch (e) {
+      $("stageEmpty").hidden = false;
+      $("stageEmpty").textContent = "Браузер не показывает 3D, но расчёт работает.";
+      $("stageHint").hidden = true;
+      return;
+    }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.5, 20000);
+    const controls = new THREE.OrbitControls(camera, canvas);
+    controls.enableDamping = false;
+    controls.addEventListener("change", () => draw());
+
+    /* Свет подобран так, чтобы светлые цвета катушек не уходили в белый. */
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3a3a, 0.5));
+    const key = new THREE.DirectionalLight(0xffffff, 0.5);
+    key.position.set(0.6, 1, 0.8);
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.2);
+    rim.position.set(-0.8, 0.4, -0.6);
+    scene.add(rim);
+
+    const [bx, by] = CFG.buildMm;
+    const plate = new THREE.Mesh(
+      new THREE.PlaneGeometry(bx, by),
+      new THREE.MeshStandardMaterial({ color: 0x8f7646, roughness: 0.92, metalness: 0.1 })
+    );
+    plate.rotation.x = -Math.PI / 2;
+    plate.position.y = -0.05;
+    scene.add(plate);
+    const grid = new THREE.GridHelper(Math.max(bx, by), Math.round(Math.max(bx, by) / 10), 0xc4a66c, 0xa38a58);
+    grid.position.y = 0.02;
+    scene.add(grid);
+
+    Object.assign(stage, { ok: true, renderer, scene, camera, controls, mesh: null, model: null });
+
+    canvas.addEventListener("webglcontextlost", e => e.preventDefault());
+    canvas.addEventListener("webglcontextrestored", () => draw());
+
+    const resize = () => {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      if (!w || !h) return;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      draw();
+    };
+    new ResizeObserver(resize).observe(canvas);
+    syncStageTheme();
+    resize();
+  }
+
+  function syncStageTheme() {
+    if (!stage.ok) return;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || "#22252A";
+    stage.scene.background = new THREE.Color(bg);
+    draw();
+  }
+
+  function draw() {
+    if (stage.ok) stage.renderer.render(stage.scene, stage.camera);
+  }
+
+  function stageShow(m) {
+    $("stageName").textContent = m ? m.name : "";
+    if (!stage.ok) return;
+    if (stage.mesh) {
+      stage.scene.remove(stage.mesh);
+      stage.mesh.geometry.dispose();
+      stage.mesh.material.dispose();
+      stage.mesh = null;
+    }
+    stage.model = m || null;
+    if (!m) { draw(); return; }
+    let len = 0;
+    for (const p of m.objects) len += Math.floor(p.length / 9) * 9;
+    const all = new Float32Array(len);
+    let o = 0;
+    for (const p of m.objects) { const n = Math.floor(p.length / 9) * 9; all.set(p.subarray(0, n), o); o += n; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(all, 3));
+    geo.rotateX(-Math.PI / 2);
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.02, side: THREE.DoubleSide });
+    stage.mesh = new THREE.Mesh(geo, mat);
+    stage.scene.add(stage.mesh);
+    stagePaint();
+    stagePlace(m, true);
+  }
+
+  /* Окраска: один цвет катушки или, для «микса», каждая отдельная часть модели своим цветом. */
+  function stagePaint() {
+    if (!stage.ok || !stage.mesh || !stage.model) return;
+    const m = stage.model, c = color();
+    const mat = stage.mesh.material, geo = stage.mesh.geometry;
+    if (c.mix) {
+      if (!geo.getAttribute("color")) {
+        const pal = MIX_PALETTE.map(h => new THREE.Color(h));
+        const colors = new Float32Array(geo.getAttribute("position").count * 3);
+        let t = 0;
+        m.objects.forEach((pos, j) => {
+          const comp = m.comps && m.comps[j];
+          const n = Math.floor(pos.length / 9);
+          for (let k = 0; k < n; k++, t++) {
+            const col = pal[(comp ? comp.offset + comp.tri[k] : j) % pal.length];
+            for (let v = 0; v < 3; v++) {
+              colors[t * 9 + v * 3] = col.r; colors[t * 9 + v * 3 + 1] = col.g; colors[t * 9 + v * 3 + 2] = col.b;
+            }
+          }
+        });
+        geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      }
+      mat.vertexColors = true;
+      mat.color.set(0xffffff);
+    } else {
+      mat.vertexColors = false;
+      mat.color.set(c.hex);
+    }
+    mat.needsUpdate = true;
+    draw();
+  }
+
+  function stagePlace(m, refit) {
+    if (!stage.ok || !stage.mesh || !m) return;
+    const s = m.unit * m.scalePct / 100;
+    const bb = stage.mesh.geometry.boundingBox;
+    stage.mesh.scale.setScalar(s);
+    const cx = (bb.min.x + bb.max.x) / 2, cz = (bb.min.z + bb.max.z) / 2;
+    stage.mesh.position.set(-cx * s, -bb.min.y * s, -cz * s);
+    if (refit) {
+      const size = new THREE.Vector3().subVectors(bb.max, bb.min).multiplyScalar(s);
+      const radius = Math.max(size.length() / 2, 5);
+      const target = new THREE.Vector3(0, size.y / 2, 0);
+      const dist = radius / Math.sin((stage.camera.fov * Math.PI) / 360) * 1.15;
+      const dir = new THREE.Vector3(0.9, 0.75, 1.1).normalize();
+      stage.camera.position.copy(target).addScaledVector(dir, dist);
+      stage.camera.near = Math.max(dist / 100, 0.1);
+      stage.camera.far = dist * 50 + 2000;
+      stage.camera.updateProjectionMatrix();
+      stage.controls.target.copy(target);
+      stage.controls.update();
+    }
+    draw();
+  }
+
+  /* ---------- события ---------- */
+
+  function bind() {
+    $("file").addEventListener("change", e => { handleFiles(e.target.files); e.target.value = ""; });
+
+    const st = $("stage");
+    let depth = 0;
+    st.addEventListener("dragenter", e => { e.preventDefault(); depth++; $("drop").hidden = false; });
+    st.addEventListener("dragover", e => { e.preventDefault(); });
+    st.addEventListener("dragleave", () => { depth = Math.max(0, depth - 1); if (!depth) $("drop").hidden = true; });
+    st.addEventListener("drop", e => {
+      e.preventDefault(); depth = 0; $("drop").hidden = true;
+      if (e.dataTransfer && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+    });
+
+    $("opts").addEventListener("change", e => {
+      const t = e.target;
+      if (t.name === "material") { state.material = t.value; renderColors(); stagePaint(); }
+      if (t.name === "preset") state.preset = t.value;
+      if (t.name === "color") { state.color = t.value; state.lastColor[state.material] = t.value; stagePaint(); }
+      if (t.id === "supports") state.supports = t.checked;
+      renderAll();
+    });
+    $("opts").addEventListener("submit", e => e.preventDefault());
+
+    const list = $("models");
+    list.addEventListener("click", e => {
+      const li = e.target.closest(".model");
+      if (!li) return;
+      const m = state.models.find(x => x.id === +li.dataset.id);
+      if (!m) return;
+      const act = e.target.closest("[data-act]");
+      if (act) {
+        const a = act.dataset.act;
+        if (a === "inc") m.qty = Math.min(999, m.qty + 1);
+        if (a === "dec") m.qty = Math.max(1, m.qty - 1);
+        if (a === "del") {
+          const idx = state.models.indexOf(m);
+          state.models = state.models.filter(x => x !== m);
+          if (state.selected === m.id) {
+            const next = state.models[Math.min(idx, state.models.length - 1)];
+            state.selected = next ? next.id : null;
+            stageShow(selectedModel());
+          }
+          renderAll();
+          const focusRow = rows.get(state.selected);
+          if (focusRow) focusRow.focus();
+          return;
+        }
+        renderAll();
+        return;
+      }
+      if (e.target.closest(".qty")) return;
+      if (state.selected !== m.id) { state.selected = m.id; renderAll(); stageShow(m); }
+    });
+    list.addEventListener("keydown", e => {
+      if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("model")) {
+        e.preventDefault();
+        e.target.click();
+      }
+    });
+    list.addEventListener("change", e => {
+      if (e.target.type !== "number") return;
+      const li = e.target.closest(".model");
+      const m = li && state.models.find(x => x.id === +li.dataset.id);
+      if (!m) return;
+      const v = Math.round(+e.target.value);
+      m.qty = Number.isFinite(v) ? Math.min(999, Math.max(1, v)) : 1;
+      e.target.value = m.qty;
+      renderAll();
+    });
+
+    $("unit").addEventListener("change", e => {
+      const m = selectedModel();
+      if (!m) return;
+      m.unit = +e.target.value || 1;
+      renderAll();
+      stagePlace(m, true);
+    });
+    $("scale").addEventListener("change", e => {
+      const m = selectedModel();
+      if (!m) return;
+      const v = +e.target.value;
+      m.scalePct = Number.isFinite(v) && v > 0 ? Math.min(1000, v) : 100;
+      e.target.value = m.scalePct;
+      renderAll();
+      stagePlace(m, true);
+    });
+
+    $("copy").addEventListener("click", () => {
+      if (!state.models.length) {
+        flash("Сначала загрузите модель.");
+        return;
+      }
+      if (state.models.every(m => m.isSample)) {
+        flash("Сначала загрузите свою модель: сейчас в расчёте пример.");
+        return;
+      }
+      const text = orderText();
+      const fb = $("copyFallback");
+      const fallback = () => {
+        fb.hidden = false; fb.value = text; fb.focus(); fb.select();
+        flash("Не удалось скопировать автоматически. Текст выделен ниже, скопируйте его вручную.");
+      };
+      try {
+        navigator.clipboard.writeText(text).then(() => {
+          fb.hidden = true;
+          flash("Расчёт скопирован. Вставьте его в сообщение на Авито и допишите ссылку на модель.");
+        }, fallback);
+      } catch (e) { fallback(); }
+    });
+
+    $("contact").href = CFG.contactUrl;
+
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", syncStageTheme);
+    new MutationObserver(syncStageTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  }
+
+  /* ---------- старт ---------- */
+
+  renderTerms();
+  renderOptions();
+  bind();
+  stageInit();
+  addModel("Пример: шестерня.stl", [makeGear({ teeth: 24, rTip: 45, rRoot: 40, rHole: 6, height: 14 })], 1, { sample: true, qty: 2 });
+})();
+</script>
+</body>
+</html>
