@@ -232,6 +232,8 @@ button, input, select { font: inherit; color: inherit; }
 }
 .swatch input:checked + span { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .swatch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 4px; }
+/* На узком телефоне все цвета вместе с «миксом» помещаются в один ряд. */
+@media (max-width: 400px) { .swatches { gap: 6px; } .swatch span { width: 32px; height: 32px; } }
 .color-name { font-size: 14px; }
 .color-name .muted { color: var(--muted); }
 
@@ -1033,8 +1035,10 @@ function makeGear(o) {
       m.textContent = "Каждая часть модели печатается своим цветом из наличия PLA. Какую часть каким цветом, обсудим в сообщениях.";
     } else {
       b.textContent = "Цвет: " + c.name + (c.finish ? ", " : ". ");
-      if (c.finish) m.textContent = c.finish + ".";
-      if (state.material === "PETG") m.textContent = "PETG сейчас есть только оливковый. Другие цвета есть в PLA.";
+      const notes = [];
+      if (c.finish) notes.push(c.finish + ".");
+      if (state.material === "PETG") notes.push("PETG сейчас есть только оливковый. Другие цвета есть в PLA.");
+      m.textContent = notes.join(" ");
     }
     $("colorName").append(b, m);
   }
