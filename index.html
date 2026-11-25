@@ -234,9 +234,6 @@ button, input, select { font: inherit; color: inherit; }
 .swatch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 4px; }
 .color-name { font-size: 14px; }
 .color-name .muted { color: var(--muted); }
-.switch { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
-.switch input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); }
-.switch small { display: block; color: var(--muted); font-size: 13px; }
 
 /* Этикетка катушки */
 .spool { padding: 18px 18px 16px; display: grid; gap: 12px; border: 2px solid var(--ink); border-radius: var(--radius); background: var(--surface); }
@@ -335,12 +332,6 @@ button, input, select { font: inherit; color: inherit; }
           <legend class="group-title">Назначение детали</legend>
           <div class="seg" id="presets"></div>
         </fieldset>
-        <label class="switch" for="supports">
-          <input type="checkbox" id="supports">
-          <span>Нужны поддержки
-            <small>Если у модели есть нависающие части. Добавим около 15% пластика.</small>
-          </span>
-        </label>
       </form>
 
       <div class="spool" id="spool" aria-live="polite">
@@ -827,6 +818,7 @@ function makeGear(o) {
     printer: "Bambu Lab A1",
     buildMm: [256, 256, 256],
     waste: 0.03,
+    /* Пластик на поддержки всегда входит в оценку: покупатель обычно не знает, нужны ли они. */
     supports: 0.15,
     contactUrl: "https://www.avito.ru/user/88d523b1a30b04846ac75f1177f00899/profile",
     materials: [
@@ -839,19 +831,22 @@ function makeGear(o) {
       { id: "strong", name: "Под нагрузкой", infill: 0.5, shellMm: 1.6 },
       { id: "solid", name: "Сплошная", infill: 1, shellMm: 1.6 },
     ],
-    /* Катушки в наличии: ELEGOO матовый PLA, eSUN PLA+, ELEGOO PETG. */
+    /* Катушки в наличии: ELEGOO матовый PLA, eSUN PLA+, Cactus PLA Silk, ELEGOO PETG.
+       Названия и оттенки PLA те же, что на inord.github.io/dj-cat (подобраны по фото напечатанного). */
     colors: [
-      { id: "white", name: "белый", hex: "#F1F0EB", materials: ["PLA"] },
-      { id: "black", name: "чёрный", hex: "#252524", materials: ["PLA"] },
-      { id: "sakura", name: "розовая сакура", hex: "#F6BBCE", materials: ["PLA"] },
-      { id: "almond", name: "миндальный жёлтый", hex: "#E2D08A", materials: ["PLA"] },
-      { id: "khaki", name: "светлый хаки", hex: "#B3A283", materials: ["PLA"] },
+      { id: "white", name: "белый", hex: "#EFEEEA", finish: "матовый", materials: ["PLA"] },
+      { id: "black", name: "чёрный", hex: "#232323", finish: "матовый", materials: ["PLA"] },
+      { id: "sakura", name: "розовая сакура", hex: "#F4B5CA", finish: "матовый", materials: ["PLA"] },
+      { id: "silk-pink", name: "розовый шёлк", hex: "#F07A8E", finish: "шёлковый блеск", materials: ["PLA"] },
+      { id: "almond", name: "миндально-жёлтый", hex: "#EEE2AE", finish: "полуматовый", materials: ["PLA"] },
+      { id: "khaki", name: "светлый хаки", hex: "#E1DDCB", finish: "полуматовый", materials: ["PLA"] },
+      { id: "mint", name: "мятный", hex: "#B4E4C2", finish: "полуматовый", materials: ["PLA"] },
       { id: "olive", name: "оливковый", hex: "#808752", materials: ["PETG"] },
       { id: "mix", name: "микс", mix: true, materials: ["PLA"] },
     ],
   };
-  /* Цвета частей в превью для «микса». */
-  const MIX_PALETTE = ["#F1F0EB", "#F6BBCE", "#E2D08A", "#B3A283", "#252524"];
+  /* Цвета частей в превью для «микса»: все PLA из наличия, соседние заметно отличаются. */
+  const MIX_PALETTE = ["#EFEEEA", "#F4B5CA", "#B4E4C2", "#EEE2AE", "#F07A8E", "#E1DDCB", "#232323"];
   const UNIT_NAMES = { "1": "миллиметры", "10": "сантиметры", "25.4": "дюймы", "1000": "метры" };
 
   const $ = id => document.getElementById(id);
@@ -869,7 +864,6 @@ function makeGear(o) {
     color: "white",
     lastColor: { PLA: "white", PETG: "olive" },
     preset: "decor",
-    supports: false,
   };
   let uid = 0;
 
@@ -934,7 +928,7 @@ function makeGear(o) {
     const mat = material(), pr = preset();
     const opts = {
       shellMm: pr.shellMm, infill: pr.infill, density: mat.density,
-      extra: CFG.waste + (state.supports ? CFG.supports : 0),
+      extra: CFG.waste + CFG.supports,
     };
     /* Стенки считаются для каждого тела отдельно, иначе тонкая деталь получает лишний пластик. */
     const each = m.base.objStats.reduce((g, o) => g + estimateGrams(o.volume * s * s * s, o.area * s * s, opts), 0);
@@ -1018,7 +1012,7 @@ function makeGear(o) {
     for (const c of avail) {
       const l = document.createElement("label");
       l.className = "swatch";
-      l.title = c.name;
+      l.title = c.finish ? c.name + ", " + c.finish : c.name;
       l.innerHTML = '<input type="radio" name="color"><span></span>';
       const input = l.querySelector("input");
       input.id = "col-" + c.id; input.value = c.id; input.checked = c.id === state.color;
@@ -1038,10 +1032,9 @@ function makeGear(o) {
       b.textContent = "Цвет: микс. ";
       m.textContent = "Каждая часть модели печатается своим цветом из наличия PLA. Какую часть каким цветом, обсудим в сообщениях.";
     } else {
-      b.textContent = "Цвет: " + c.name + ". ";
-      m.textContent = state.material === "PETG"
-        ? "PETG сейчас есть только оливковый. Другие цвета есть в PLA."
-        : "Нужен другой цвет? Напишите, подберём.";
+      b.textContent = "Цвет: " + c.name + (c.finish ? ", " : ". ");
+      if (c.finish) m.textContent = c.finish + ".";
+      if (state.material === "PETG") m.textContent = "PETG сейчас есть только оливковый. Другие цвета есть в PLA.";
     }
     $("colorName").append(b, m);
   }
@@ -1129,7 +1122,7 @@ function makeGear(o) {
     const mat = material(), pr = preset();
     const t = totals();
     $("spoolMat").textContent = mat.name + " · " + color().name;
-    $("spoolSpec").textContent = "заполнение " + Math.round(pr.infill * 100) + "%" + (state.supports ? " · поддержки" : "");
+    $("spoolSpec").textContent = "заполнение " + Math.round(pr.infill * 100) + "%";
     $("grams").textContent = state.models.length ? grams(t.q.grams) : "0 г";
     $("pieces").textContent = num(t.pieces);
     if (!state.models.length) {
@@ -1177,7 +1170,7 @@ function makeGear(o) {
     });
     lines.push("");
     lines.push("Пластик: " + mat.name + ", цвет: " + (color().mix ? "микс (части разных цветов, распределение обсудим)" : color().name));
-    lines.push("Назначение: " + pr.name.toLowerCase() + " (заполнение " + Math.round(pr.infill * 100) + "%), поддержки: " + (state.supports ? "нужны" : "не нужны"));
+    lines.push("Назначение: " + pr.name.toLowerCase() + " (заполнение " + Math.round(pr.infill * 100) + "%)");
     lines.push("Всего пластика: около " + grams(t.q.grams));
     lines.push("Предварительная цена: " + rub(t.q.total));
     lines.push("");
@@ -1420,7 +1413,6 @@ function makeGear(o) {
       if (t.name === "material") { state.material = t.value; renderColors(); stagePaint(); }
       if (t.name === "preset") state.preset = t.value;
       if (t.name === "color") { state.color = t.value; state.lastColor[state.material] = t.value; stagePaint(); }
-      if (t.id === "supports") state.supports = t.checked;
       renderAll();
     });
     $("opts").addEventListener("submit", e => e.preventDefault());
